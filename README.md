@@ -179,3 +179,79 @@ pytest -v
   - Lekérdezi a feladat állapotát (`QUEUED`, `PROCESSING`, `COMPLETED`, `FAILED`)
 - **`GET /api/v1/jobs/{job_id}/report`**
   - Részletes validációs jelentés (relációs hibák, hiányzó oszlopok, rekord statisztikák)
+
+
+---
+
+## Deklaratív Kubernetes telepítés, Verziókezelés, Rollback és GitOps (9 + 5 pont)
+
+A projekt a felhőnatív mikroszerviz-telepítést egy szabványos Helm 3 charttal (`deploy/helm/gtfs-validator/`) és deklaratív ArgoCD GitOps konfigurációval (`deploy/gitops/`) valósítja meg.
+
+### 1. Helm Chart Struktúra és Környezetek Elkülönítése
+A konfiguráció a tiszta környezeti szétválasztás érdekében külön értékfájlokat használ:
+- **`values.yaml`**: Közös alapértelmezések (nem emelt szintű futtató felhasználó UID 10001, readiness/liveness probek, Prometheus annotációk).
+- **`values-staging.yaml`**: 1 replika, lazább erőforráskorlátok (250m CPU, 256Mi RAM), SQLite adatbázis (`sqlite:////app/data/gtfs_validator_staging.db`), staging Ingress.
+- **`values-production.yaml`**: 2 replika induláskor, **HorizontalPodAutoscaler (HPA)** bekapcsolva (2–10 pod skálázás 75% CPU és 80% RAM terhelésnél), szigorú korlátok (1000m CPU, 1Gi RAM limit), dedikált PostgreSQL kapcsolat, TLS Ingress.
+
+### 2. Telepítés Helm segítségével
+
+#### Staging környezet:
+```bash
+helm upgrade --install gtfs-validator-staging deploy/helm/gtfs-validator \
+  --namespace gtfs-validator-staging --create-namespace \
+  -f deploy/helm/gtfs-validator/values.yaml \
+  -f deploy/helm/gtfs-validator/values-staging.yaml
+```
+
+#### Production környezet:
+```bash
+helm upgrade --install gtfs-validator-prod deploy/helm/gtfs-validator \
+  --namespace gtfs-validator-prod --create-namespace \
+  -f deploy/helm/gtfs-validator/values.yaml \
+  -f deploy/helm/gtfs-validator/values-production.yaml
+```
+
+### 3. Verzióváltás (Rolling Upgrade)
+Új alkalmazásverzió (pl. `1.1.0`) kiadása a meglévő podok kiesésmentes (zero-downtime) cseréjével:
+```bash
+helm upgrade gtfs-validator-prod deploy/helm/gtfs-validator \
+  --namespace gtfs-validator-prod \
+  -f deploy/helm/gtfs-validator/values.yaml \
+  -f deploy/helm/gtfs-validator/values-production.yaml \
+  --set image.tag="1.1.0"
+```
+A frissítés állapota és a gördülő csere nyomon követhető:
+```bash
+kubectl rollout status deployment/gtfs-validator-prod -n gtfs-validator-prod
+```
+
+### 4. Visszaállítás (Rollback) elrontott kiadás esetén
+Ha egy új release hibát vagy hibás konfigurációt tartalmaz, a Helm revíziótörténetéből azonnal visszaállítható az előző stabil állapot:
+
+1. **Kiadási történet lekérdezése:**
+   ```bash
+   helm history gtfs-validator-prod -n gtfs-validator-prod
+   ```
+   Példa kimenet:
+   ```text
+   REVISION  UPDATED                   STATUS      CHART                 APP VERSION  DESCRIPTION
+   1         Thu Oct 29 12:00:00 2026  superseded  gtfs-validator-1.0.0  1.0.0        Install complete
+   2         Thu Oct 29 12:15:00 2026  deployed    gtfs-validator-1.0.0  1.1.0        Upgrade complete
+   ```
+
+2. **Azonnali visszaállítás az 1-es revízióra:**
+   ```bash
+   helm rollback gtfs-validator-prod 1 -n gtfs-validator-prod
+   ```
+   A Kubernetes elindítja a korábbi imaget futtató podokat, és csak azok sikeres readiness probe-ja után állítja le a hibás podokat.
+
+### 5. GitOps és ArgoCD automatizáció (`deploy/gitops/argocd-application.yaml`)
+A GitOps paradigmának megfelelően a Git repository a kívánt állapot egyetlen hiteles forrása (Single Source of Truth).
+- **ArgoCD Application**: A `deploy/gitops/argocd-application.yaml` manifest automatikusan figyeli a `main` ágon lévő Helm chartot.
+- **Automatizált szinkronizáció**:
+  - `prune: true`: A Gitből törölt erőforrások automatikusan eltávolításra kerülnek a klaszterből.
+  - `selfHeal: true`: Ha a klaszteren manuális módosítás történik (configuration drift), az ArgoCD automatikusan visszaállítja a Gitben leírt állapotot.
+- **Alkalmazás bevezetése:**
+  ```bash
+  kubectl apply -f deploy/gitops/argocd-application.yaml
+  ```

@@ -1,0 +1,15 @@
+apiVersion: v2
+name: gtfs-validator
+description: Helm chart for deploying the GTFS Validator microservice
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - gtfs
+  - validator
+  - fastapi
+  - devops
+maintainers:
+  - name: SZTE DevOps Team
+    email: devops@szte.hu
+

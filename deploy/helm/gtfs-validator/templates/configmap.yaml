@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "gtfs-validator.fullname" . }}-config
+  labels:
+    {{- include "gtfs-validator.labels" . | nindent 4 }}
+data:
+  DATABASE_URL: {{ .Values.env.DATABASE_URL | quote }}
+  UPLOAD_DIR: {{ .Values.env.UPLOAD_DIR | quote }}
+  SQL_ECHO: {{ .Values.env.SQL_ECHO | quote }}
+

@@ -1,0 +1,44 @@
+# Production environment overrides for gtfs-validator
+replicaCount: 2
+
+image:
+  tag: "1.0.0"
+  pullPolicy: IfNotPresent
+
+resources:
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 75
+  targetMemoryUtilizationPercentage: 80
+
+env:
+  DATABASE_URL: "postgresql://gtfs_user:secret_prod_pass@postgres-cluster.db.svc.cluster.local:5432/gtfs_production"
+  UPLOAD_DIR: "/app/uploads"
+  SQL_ECHO: "false"
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  hosts:
+    - host: gtfs-validator.szte.hu
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: gtfs-validator-prod-tls
+      hosts:
+        - gtfs-validator.szte.hu
+
