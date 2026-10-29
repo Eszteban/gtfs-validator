@@ -1,0 +1,16 @@
+# Célspecifikus környezet kiválasztása: "staging" vagy "production"
+environment = "staging"
+
+# Helyi kubeconfig fájl elérési útja (alapértelmezetten: ~/.kube/config)
+kubeconfig_path = "~/.kube/config"
+
+# Opcionális Kubernetes contextus felülbírálás:
+# kubeconfig_context = "docker-desktop"
+
+# Opcionális egyedi névtér felülbírálás:
+# namespace = "my-custom-gtfs-namespace"
+
+# Opcionális konténerkép tag és replikaszám felülbírálás:
+# image_tag     = "1.0.0-staging"
+# replica_count = 1
+

@@ -255,3 +255,54 @@ A GitOps paradigmának megfelelően a Git repository a kívánt állapot egyetle
   ```bash
   kubectl apply -f deploy/gitops/argocd-application.yaml
   ```
+
+
+---
+
+## Infrastruktúra-mint-Kód (OpenTofu / Terraform) (5 pont)
+
+A projekt a Kubernetes névterek és a Helm chartok automatizált kiépítését szabványos, felhőfüggetlen **OpenTofu / Terraform** kóddal valósítja meg a `deploy/terraform/` könyvtárban.
+
+### 1. IaC és Konfigurációkezelési Döntések Indoklása
+
+- **Deklaratív megközelítés (Declarative Paradigm)**:
+  Az imperatív parancssori scriptekkel (pl. `kubectl create...`) szemben a deklaratív kód a rendszer kívánt végállapotát írja le. Az OpenTofu/Terraform függőségi gráfot (DAG) épít, kiszámítja a szükséges módosításokat, és idempotens módon hozza létre vagy frissíti az erőforrásokat.
+- **Állapotkezelés (State Management)**:
+  A `terraform.tfstate` pontos nyilvántartást vezet a klaszteren létező erőforrásokról és azok metaadatairól. Ez teszi lehetővé a biztonságos frissítéseket, a párhuzamos módosítások megelőzését és a teljes környezet tiszta törlését (`destroy`).
+- **Eltérések detektálása és korrekciója (Drift Detection)**:
+  A `tofu plan` parancs összeveti a klaszter valós pillanatnyi állapotát a Gitben rögzített kóddal, és azonnal jelzi, ha valaki manuálisan módosított egy beállítást a klaszteren, majd a `tofu apply` helyreállítja a kívánt állapotot.
+- **Szállítófüggetlen és költségmentes reprodukálhatóság**:
+  A kód a hivatalos `hashicorp/kubernetes` és `hashicorp/helm` provider-eket használja a szabványos helyi `~/.kube/config` konfiguráción keresztül (Docker Desktop, Kind, K3d vagy Minikube). Nincs szükség fizetős felhős hitelesítő adatokra (AWS/GCP/Azure) a futtatáshoz.
+- **Környezetek modularizált kezelése**:
+  A `var.environment` változó (`staging` vagy `production`) átkapcsolásával ugyanabból a kódbázisból, teljesen reprodukálható módon húzható fel az elszigetelt staging vagy production infrastruktúra.
+
+### 2. Életciklus-parancsok (OpenTofu / Terraform)
+
+A parancsok a `deploy/terraform/` mappából futtatandók (vagy konténerből: `docker run --rm -v "${PWD}:/apps" -w /apps/deploy/terraform hashicorp/terraform:latest ...`):
+
+```bash
+cd deploy/terraform
+
+# 1. Munkakörnyezet és providerek inicializálása
+tofu init
+# (vagy terraform init)
+
+# 2. Változások előzetes megtekintése (Staging környezet)
+tofu plan -var="environment=staging"
+
+# 3. Infrastruktúra felépítése
+tofu apply -var="environment=staging" -auto-approve
+
+# 4. Production környezet felépítése (HPA-val és PostgreSQL-lel)
+tofu apply -var="environment=production" -auto-approve
+
+# 5. Teljes infrastruktúra és névtér lebontása
+tofu destroy -var="environment=staging" -auto-approve
+```
+
+### 3. Változók és testreszabás (`terraform.tfvars.example`)
+Másold át a példafájlt:
+```bash
+cp terraform.tfvars.example terraform.tfvars
+```
+A paraméterek segítségével felülbírálható a kubeconfig elérési útja, a névtér neve, valamint a konténerkép tagje és a replikaszám is.
