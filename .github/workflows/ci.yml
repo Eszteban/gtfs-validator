@@ -96,7 +96,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Run Trivy Vulnerability Scan (Terminal Summary)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@master
         with:
           image-ref: gtfs-validator:${{ github.sha }}
           format: "table"
@@ -106,7 +106,7 @@ jobs:
           severity: "CRITICAL,HIGH"
 
       - name: Run Trivy Vulnerability Scan (SARIF Report)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@master
         with:
           image-ref: gtfs-validator:${{ github.sha }}
           format: "sarif"
