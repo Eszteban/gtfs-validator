@@ -1,0 +1,21 @@
+[project]
+name = "gtfs-validator"
+version = "1.0.0"
+description = "Asynchronous GTFS validator microservice"
+requires-python = ">=3.12"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "C4"]
+ignore = [
+    "E501", # Line length is soft limit
+    "B008", # FastAPI Depends/File/BackgroundTasks in default arguments is idiomatic
+    "B904", # Exception chaining in HTTPExceptions
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]

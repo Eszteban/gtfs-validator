@@ -1,0 +1,139 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  # ============================================================================
+  # 1. Kódminőség és automatizált tesztek (9 pont)
+  # ============================================================================
+  lint-and-test:
+    name: Lint & Automated Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Code Quality & Linting (Ruff)
+        run: |
+          ruff check .
+
+      - name: Run Pytest with JUnit XML Report
+        run: |
+          pytest -v --junitxml=test-results.xml
+
+      - name: Upload Test Results Artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-junit
+          path: test-results.xml
+          retention-days: 14
+
+  # ============================================================================
+  # 2. Titokszivárgás-vizsgálat (Secret Detection)
+  # ============================================================================
+  secret-scan:
+    name: Secret Leak Detection
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run TruffleHog Secret Scanner
+        uses: trufflesecurity/trufflehog@main
+        with:
+          extra_args: --only-verified
+
+  # ============================================================================
+  # 3. Konténer Build, Biztonsági Szkennelés és SBOM (7 pont)
+  # ============================================================================
+  container-security-and-sbom:
+    name: Container Security & SBOM
+    needs: [lint-and-test]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Container Image (with GHA Cache)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: gtfs-validator:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run Trivy Vulnerability Scan (Terminal Summary)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: gtfs-validator:${{ github.sha }}
+          format: "table"
+          exit-code: "0"
+          ignore-unfixed: true
+          vuln-type: "os,library"
+          severity: "CRITICAL,HIGH"
+
+      - name: Run Trivy Vulnerability Scan (SARIF Report)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: gtfs-validator:${{ github.sha }}
+          format: "sarif"
+          output: "trivy-results.sarif"
+          severity: "CRITICAL,HIGH"
+
+      - name: Generate Software Bill of Materials (SBOM - SPDX)
+        uses: anchore/sbom-action@v0
+        with:
+          image: gtfs-validator:${{ github.sha }}
+          format: spdx-json
+          output-file: gtfs-validator-sbom.spdx.json
+
+      - name: Generate Software Bill of Materials (SBOM - CycloneDX)
+        uses: anchore/sbom-action@v0
+        with:
+          image: gtfs-validator:${{ github.sha }}
+          format: cyclonedx-json
+          output-file: gtfs-validator-sbom.cdx.json
+
+      - name: Upload SBOM & Security Scan Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-and-sbom-artifacts
+          path: |
+            gtfs-validator-sbom.spdx.json
+            gtfs-validator-sbom.cdx.json
+            trivy-results.sarif
+          retention-days: 14
+

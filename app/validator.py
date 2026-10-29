@@ -2,12 +2,11 @@ import csv
 import io
 import os
 import zipfile
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Set, Tuple
+from datetime import UTC, datetime
+from typing import Any
 
 from app.database import SessionLocal
 from app.models import JobStatus, ValidationJob
-
 
 REQUIRED_GTFS_FILES = {
     "agency.txt",
@@ -28,10 +27,10 @@ REQUIRED_COLUMNS = {
 
 def _read_csv_from_zip(
     zf: zipfile.ZipFile, filename: str
-) -> Tuple[List[Dict[str, str]], List[Dict[str, Any]]]:
+) -> tuple[list[dict[str, str]], list[dict[str, Any]]]:
     """Reads a CSV file from a zip archive and returns rows and header syntax errors."""
-    errors: List[Dict[str, Any]] = []
-    rows: List[Dict[str, str]] = []
+    errors: list[dict[str, Any]] = []
+    rows: list[dict[str, str]] = []
 
     try:
         with zf.open(filename, "r") as f:
@@ -75,7 +74,7 @@ def _read_csv_from_zip(
                         "message": "routes.txt must include at least one of 'route_short_name' or 'route_long_name'.",
                     })
 
-            for line_no, row in enumerate(reader, start=2):
+            for _line_no, row in enumerate(reader, start=2):
                 # Clean keys and values
                 clean_row = {
                     (k.strip() if k else ""): (v.strip() if v else "")
@@ -96,7 +95,7 @@ def _read_csv_from_zip(
     return rows, errors
 
 
-def validate_gtfs_archive(zip_path: str) -> Dict[str, Any]:
+def validate_gtfs_archive(zip_path: str) -> dict[str, Any]:
     """
     Validates a GTFS zip archive using standard zipfile and csv modules:
     - Zip integrity
@@ -105,10 +104,10 @@ def validate_gtfs_archive(zip_path: str) -> Dict[str, Any]:
     - Data types (coordinates, sequences)
     - Relational integrity across files (Foreign Keys)
     """
-    errors: List[Dict[str, Any]] = []
-    warnings: List[Dict[str, Any]] = []
-    stats: Dict[str, Any] = {}
-    files_found: List[str] = []
+    errors: list[dict[str, Any]] = []
+    warnings: list[dict[str, Any]] = []
+    stats: dict[str, Any] = {}
+    files_found: list[str] = []
 
     if not os.path.exists(zip_path):
         return {
@@ -146,13 +145,13 @@ def validate_gtfs_archive(zip_path: str) -> Dict[str, Any]:
         with zipfile.ZipFile(zip_path, "r") as zf:
             all_names = zf.namelist()
             # Map canonical base names (e.g. 'stops.txt') to actual entry names in zip
-            name_map: Dict[str, str] = {}
+            name_map: dict[str, str] = {}
             for name in all_names:
                 base = os.path.basename(name)
                 if base:
                     name_map[base] = name
 
-            files_found = sorted(list(name_map.keys()))
+            files_found = sorted(name_map.keys())
             stats["total_files_in_zip"] = len(files_found)
 
             # 1. Check required files
@@ -176,7 +175,7 @@ def validate_gtfs_archive(zip_path: str) -> Dict[str, Any]:
                     "message": "Neither 'calendar.txt' nor 'calendar_dates.txt' was found; feed may lack active service definitions.",
                 })
 
-            parsed_data: Dict[str, List[Dict[str, str]]] = {}
+            parsed_data: dict[str, list[dict[str, str]]] = {}
             for req_file in REQUIRED_GTFS_FILES.union({"calendar.txt", "calendar_dates.txt"}):
                 if req_file in name_map:
                     rows, read_errors = _read_csv_from_zip(zf, name_map[req_file])
@@ -186,7 +185,7 @@ def validate_gtfs_archive(zip_path: str) -> Dict[str, Any]:
 
             # 2. Syntax & Data type checks
             # stops.txt: coordinates check
-            valid_stop_ids: Set[str] = set()
+            valid_stop_ids: set[str] = set()
             if "stops.txt" in parsed_data:
                 for idx, row in enumerate(parsed_data["stops.txt"], start=2):
                     stop_id = row.get("stop_id", "")
@@ -243,7 +242,7 @@ def validate_gtfs_archive(zip_path: str) -> Dict[str, Any]:
                         })
 
             # routes.txt: route_type check
-            valid_route_ids: Set[str] = set()
+            valid_route_ids: set[str] = set()
             if "routes.txt" in parsed_data:
                 for idx, row in enumerate(parsed_data["routes.txt"], start=2):
                     route_id = row.get("route_id", "")
@@ -269,7 +268,7 @@ def validate_gtfs_archive(zip_path: str) -> Dict[str, Any]:
                         })
 
             # trips.txt: collect trip IDs and validate FK route_id
-            valid_trip_ids: Set[str] = set()
+            valid_trip_ids: set[str] = set()
             if "trips.txt" in parsed_data:
                 for idx, row in enumerate(parsed_data["trips.txt"], start=2):
                     trip_id = row.get("trip_id", "")
@@ -379,7 +378,7 @@ def process_validation_job(job_id: str, file_path: str) -> None:
         report = validate_gtfs_archive(file_path)
 
         job.status = JobStatus.COMPLETED
-        job.finished_at = datetime.now(timezone.utc)
+        job.finished_at = datetime.now(UTC)
         job.error_summary = report.get("error_summary")
         job.report_details = report
         db.commit()
@@ -389,7 +388,7 @@ def process_validation_job(job_id: str, file_path: str) -> None:
         job = db.query(ValidationJob).filter(ValidationJob.id == job_id).first()
         if job:
             job.status = JobStatus.FAILED
-            job.finished_at = datetime.now(timezone.utc)
+            job.finished_at = datetime.now(UTC)
             job.error_summary = f"Worker failed: {str(exc)}"
             job.report_details = {
                 "is_valid": False,

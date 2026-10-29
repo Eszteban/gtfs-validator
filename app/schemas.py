@@ -1,13 +1,15 @@
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
+
 from pydantic import BaseModel, ConfigDict, Field
+
 from app.models import JobStatus
 
 
 class ValidationIssue(BaseModel):
-    file: Optional[str] = None
-    line: Optional[int] = None
-    field: Optional[str] = None
+    file: str | None = None
+    line: int | None = None
+    field: str | None = None
     code: str
     message: str
 
@@ -29,8 +31,8 @@ class JobStatusResponse(BaseModel):
     filename: str
     status: JobStatus
     created_at: datetime
-    finished_at: Optional[datetime] = None
-    error_summary: Optional[str] = None
+    finished_at: datetime | None = None
+    error_summary: str | None = None
 
 
 class ValidationReportResponse(BaseModel):
@@ -40,9 +42,9 @@ class ValidationReportResponse(BaseModel):
     filename: str
     status: JobStatus
     created_at: datetime
-    finished_at: Optional[datetime] = None
+    finished_at: datetime | None = None
     is_valid: bool
-    error_summary: Optional[str] = None
+    error_summary: str | None = None
     files_found: list[str] = Field(default_factory=list)
     errors: list[ValidationIssue] = Field(default_factory=list)
     warnings: list[ValidationIssue] = Field(default_factory=list)

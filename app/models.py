@@ -1,7 +1,10 @@
 import enum
 import uuid
-from datetime import datetime, timezone
-from sqlalchemy import Column, String, DateTime, Text, JSON, Enum as SQLEnum
+from datetime import UTC, datetime
+
+from sqlalchemy import JSON, Column, DateTime, String, Text
+from sqlalchemy import Enum as SQLEnum
+
 from app.database import Base
 
 
@@ -25,7 +28,7 @@ class ValidationJob(Base):
     )
     created_at = Column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         nullable=False,
     )
     finished_at = Column(DateTime(timezone=True), nullable=True)

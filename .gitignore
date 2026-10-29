@@ -224,3 +224,8 @@ __marimo__/
 *.sqlite3
 *.db
 uploads/
+test-results.xml
+*.sarif
+*.spdx.json
+*.cdx.json
+.env

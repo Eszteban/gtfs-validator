@@ -18,6 +18,28 @@ A szolgáltatás célja feltöltött GTFS zip fájlok relációs integritásána
 
 ---
 
+## CI/CD Folyamat és Minőségi Kapuk (Quality Gates)
+
+A projekt egy teljesen automatizált GitHub Actions pipeline-t (`.github/workflows/ci.yml`) alkalmaz, amely a tantárgyi rubrika alábbi követelményeit fedi le:
+
+### 1. Kapu: Titokszivárgás-védelem (`secret-scan` job)
+- **Eszköz**: TruffleHog OSS.
+- **Funkció**: Minden commit és PR esetén átvizsgálja a repository történetét véletlenül kikerült API-kulcsok, tokenek vagy jelszavak után (titokkezelési megfelelőség).
+
+### 2. Kapu: Kódminőség és Automatikus Tesztelés (`lint-and-test` job - 9 pont)
+- **Gyorsítótárazás**: Python `pip` cache a minimális futási idő eléréséhez.
+- **Statikus analízis**: `ruff check .` linter ellenőrzi a kódot (kivéve a FastAPI-specifikus dependenciákat és lágy formázási szabályokat).
+- **Automatizált egység- és integrációs tesztek**: `pytest -v --junitxml=test-results.xml`.
+- **Artifactkezelés**: A teszteredményeket tartalmazó JUnit XML riport automatikusan feltöltésre kerül GitHub Actions artifactként (`test-results-junit`).
+
+### 3. Kapu: Konténer Biztonság, Sérülékenység-vizsgálat és SBOM (`container-security-and-sbom` job - 7 pont)
+- **Buildx & Docker Cache**: A konténerkép a GitHub Actions beépített réteg-gyorsítótárával (`cache-from/to: type=gha`) épül fel.
+- **Sérülékenység-vizsgálat (Vulnerability Scanning)**: Az Aqua Security Trivy action átvizsgálja a konténerkép operációs rendszerét és Python könyvtárait `CRITICAL` és `HIGH` szintű sebezhetőségek után, majd SARIF formátumú riportot generál.
+- **SBOM (Software Bill of Materials) generálás**: Az Anchore Syft eszköz segítségével automatikusan előáll mind **SPDX-JSON**, mind **CycloneDX-JSON** formátumú szoftverleltár.
+- **Artifactkezelés**: Az SBOM leltárak és a Trivy vizsgálati jelentések letölthető GitHub Actions artifactként mentődnek (`security-and-sbom-artifacts`).
+
+---
+
 ## Konténeres futtatás Docker Compose-zal
 
 ### 1. Környezeti változók előkészítése
@@ -81,8 +103,9 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-### 3. Tesztek futtatása
+### 3. Tesztek és linter futtatása
 ```bash
+ruff check .
 pytest -v
 ```
 

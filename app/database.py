@@ -1,7 +1,8 @@
 import os
 from typing import Generator
+
 from sqlalchemy import create_engine
-from sqlalchemy.orm import declarative_base, sessionmaker, Session
+from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
 # SQLite as default development database, can be overridden with PostgreSQL via env var
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./gtfs_validator.db")
