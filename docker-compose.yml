@@ -1,0 +1,33 @@
+services:
+  gtfs-validator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gtfs-validator
+    ports:
+      - "${PORT:-8000}:8000"
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-sqlite:////app/data/gtfs_validator.db}
+      - UPLOAD_DIR=${UPLOAD_DIR:-/app/uploads}
+      - SQL_ECHO=${SQL_ECHO:-false}
+    volumes:
+      - gtfs_uploads:/app/uploads
+      - gtfs_db:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request, sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health').getcode() == 200 else 1)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  gtfs_uploads:
+    name: gtfs_validator_uploads
+  gtfs_db:
+    name: gtfs_validator_db
+
