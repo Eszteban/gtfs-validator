@@ -306,3 +306,33 @@ Másold át a példafájlt:
 cp terraform.tfvars.example terraform.tfvars
 ```
 A paraméterek segítségével felülbírálható a kubeconfig elérési útja, a névtér neve, valamint a konténerkép tagje és a replikaszám is.
+
+
+---
+
+## Megbízhatóság, Káoszteszt és Helyreállítás (4 pont)
+
+A szolgáltatás hirtelen leállással és újraindulással szembeni ellenállóképességét egy automatizált káoszteszt szkript (`scripts/chaos_recovery_test.py`) demonstrálja.
+
+- Részletes leírás, architektúra-elemzés és RTO/RPO értékelés: [`docs/resilience-and-recovery.md`](docs/resilience-and-recovery.md)
+
+### Káosz- és Helyreállítási Teszt futtatása:
+```bash
+# 1. Konténerek indítása háttérben:
+docker compose up -d
+
+# 2. Automatizált káoszteszt végrehajtása:
+python scripts/chaos_recovery_test.py
+```
+A teszt igazolja a szolgáltatás helyreállását (~3.4s TTR), az adatperzisztencia megmaradását és a Prometheus metrikák folytonosságát.
+
+---
+
+## AI-Támogatott Munkafolyamat Szakmai Ellenőrzése (4 pont)
+
+A tantárgyi rubrika követelményeinek megfelelően a projekt részletes naplót vezet az AI-asszisztenssel végzett közös munkáról, a szakmai szűrőkről és a manuálisan felülbírált döntésekről:
+
+- Részletes audit dokumentum és döntési mátrix: [`docs/ai-audit.md`](docs/ai-audit.md)
+- **Főbb elfogadott döntések**: Non-root `UID 10001`, beépített `urllib` healthcheck (0 CVE a konténerben), multi-stage builder.
+- **Kritikus felülbírálatok**: A GitHub Actions `aquasecurity/trivy-action` verzióhibájának manuális javítása (`0.28.0`), külső nehézkes GTFS csomagok elvetése, SQLite szálkezelési hiba elhárítása a tesztkörnyezetben.
+- **Felelősségvállalás**: *"A mérnök felel a diff-ért."* – A kód és a mérési eredmények teljes mértékben ellenőrzöttek és emberi felelősség alatt állnak.
