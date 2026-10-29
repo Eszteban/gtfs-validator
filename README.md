@@ -14,7 +14,59 @@ A szolgáltatás célja feltöltött GTFS zip fájlok relációs integritásána
 - **Non-root futtató felhasználó**: `appuser` (`UID: 10001`, `GID: 10001`).
 - **Beépített HEALTHCHECK**: Python standard könyvtárral (független a külső curl csomagtól, minimális CVE-kockázat).
 - **Adatperzisztencia**: Docker named volume-ok a feltöltésekhez és az SQLite adatbázishoz.
+- **Megfigyelhetőség (Observability)**: Prometheus metrikák (`/metrics`), standard HTTP és egyedi alkalmazásszintű mérőszámok.
 - **Keretrendszer**: FastAPI, SQLAlchemy 2.0, Pydantic v2.
+
+---
+
+## Megfigyelhetőség, Metrikák és SLI/SLO (7 pont)
+
+A mikroszerviz beépített Prometheus instrumentációval rendelkezik (`prometheus-fastapi-instrumentator`), amely a `/metrics` végponton nyíltan exportálja a standard HTTP és az egyedi GTFS üzleti metrikákat.
+
+### 1. Egyedi Prometheus Alkalmazásmetrikák (`app/metrics.py`)
+- **`gtfs_validation_jobs_total{status="..."}`**: Összes befejezett validációs feladat számlálója a végállapot (`COMPLETED`, `FAILED`) szerint.
+- **`gtfs_validation_duration_seconds{status="..."}`**: A validációs feldolgozás futási idejének hisztogramja másodpercben (finomhangolt vödrökkel: `0.01`, `0.05`, `0.1`, `0.5`, `1.0`, `2.5`, `5.0`, `10.0`).
+- **`gtfs_validation_errors_total{error_type="..."}`**: Feltárt szintaktikai és relációs integritási hibák számlálója hibakódonként címkézve (pl. `FOREIGN_KEY_VIOLATION`, `MISSING_REQUIRED_COLUMN`, `INVALID_COORDINATE`).
+
+### 2. SLI / SLO Definíciók (Google SRE alapelvek szerint)
+
+#### SLI/SLO 1: API Rendelkezésre állás (Availability)
+- **Service Level Indicator (SLI)**:
+  A sikeres (nem 5xx státuszú) HTTP kérések aránya az összes beérkező HTTP kéréshez képest:
+  $$\text{SLI}_{\text{availability}} = \frac{\sum \text{rate}(http\_requests\_total\{status!=\sim"5.."\} [5m])}{\sum \text{rate}(http\_requests\_total[5m])}$$
+- **Service Level Objective (SLO)**:
+  A beérkező kérések legalább **99.5%**-a sikeres (nem 5xx szerveroldali hiba) 30 napos gördülő időablakban mérve.
+
+#### SLI/SLO 2: Validációs háttérfeldolgozás hatékonysága és késleltetése (Processing Latency & Success)
+- **Service Level Indicator (SLI)**:
+  A sikeresen befejeződött és 5 másodpercen belül lefutott GTFS validációk aránya az összes elindított validációs feladathoz viszonyítva:
+  $$\text{SLI}_{\text{latency}} = \frac{\sum \text{rate}(gtfs\_validation\_duration\_seconds\_bucket\{le="5.0", status="COMPLETED"\}[5m])}{\sum \text{rate}(gtfs\_validation\_jobs\_total[5m])}$$
+- **Service Level Objective (SLO)**:
+  A validációs feladatok legalább **95.0%**-a sikeresen és 5.0 másodpercnél rövidebb idő alatt fut le.
+
+### 3. Prometheus felület elérése és konfigurációja
+A `docker-compose.yml` tartalmazza a Prometheus (`prom/prometheus:v2.54.1`) konténert, amely 5 másodpercenként (`scrape_interval: 5s`) gyűjti a metrikákat a `gtfs-validator:8000/metrics` címről.
+- **Prometheus Web UI**: `http://localhost:9090`
+- **Célpontok állapota (Targets)**: `http://localhost:9090/targets`
+
+### 4. Ajánlott PromQL lekérdezések ellenőrzéshez
+
+```promql
+# 1. Feldolgozott GTFS feladatok száma státuszonként:
+sum by (status) (gtfs_validation_jobs_total)
+
+# 2. GTFS validációs hibák eloszlása hibakódok szerint:
+sum by (error_type) (gtfs_validation_errors_total)
+
+# 3. 95. percentilis feldolgozási idő (P95 latency):
+histogram_quantile(0.95, sum by (le) (rate(gtfs_validation_duration_seconds_bucket[5m])))
+
+# 4. Kérések másodpercenkénti rátája (RPS) végpontonként:
+sum by (handler, status) (rate(http_requests_total[1m]))
+
+# 5. API hibaarány (5xx válaszok aránya):
+sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m]))
+```
 
 ---
 
@@ -47,7 +99,7 @@ A projekt egy teljesen automatizált GitHub Actions pipeline-t (`.github/workflo
 cp .env.example .env
 ```
 
-### 2. Alkalmazás indítása és buildelése a háttérben
+### 2. Alkalmazás és Prometheus indítása a háttérben
 ```bash
 docker compose up --build -d
 ```
@@ -56,7 +108,7 @@ docker compose up --build -d
 ```bash
 docker compose ps
 ```
-A kimenetben látható lesz a konténer állapota: `Up (healthy)`.
+A kimenetben mindkét szolgáltatás (`gtfs-validator` és `prometheus`) futó állapotban látható.
 
 ### 4. Naplók megtekintése
 ```bash
@@ -72,11 +124,14 @@ Elvárt kimenet:
 uid=10001(appuser) gid=10001(appuser) groups=10001(appuser)
 ```
 
-### 6. Healthcheck végpont manuális tesztelése
+### 6. Végpontok manuális tesztelése
 ```bash
+# Egészségügyi ellenőrzés:
 curl -i http://localhost:8000/health
+
+# Prometheus metrikák ellenőrzése:
+curl -i http://localhost:8000/metrics
 ```
-Válasz: `HTTP/1.1 200 OK` és `{"status": "healthy"}`.
 
 ### 7. Leállítás és takarítás
 ```bash
@@ -115,6 +170,8 @@ pytest -v
 
 - **`GET /health`**
   - Visszatérési érték: `{"status": "healthy"}` (200 OK)
+- **`GET /metrics`**
+  - Nyílt Prometheus formátumú metrikák (HTTP kérések, késleltetések, GTFS validációs mutatók)
 - **`POST /api/v1/jobs`**
   - GTFS `.zip` fájl feltöltése (`multipart/form-data`)
   - Válasz: `JobCreateResponse` (201 Created), a háttérben elindul az ellenőrzés

@@ -165,3 +165,12 @@ def test_gtfs_validation_flow_relational_error(client):
 def test_job_not_found(client):
     response = client.get("/api/v1/jobs/non-existent-id")
     assert response.status_code == 404
+
+
+def test_metrics_endpoint(client):
+    response = client.get("/metrics")
+    assert response.status_code == 200
+    content = response.text
+    assert "gtfs_validation_jobs_total" in content
+    assert "gtfs_validation_duration_seconds" in content
+    assert "gtfs_validation_errors_total" in content

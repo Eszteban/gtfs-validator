@@ -12,8 +12,10 @@ from fastapi import (
     UploadFile,
     status,
 )
+from prometheus_fastapi_instrumentator import Instrumentator
 from sqlalchemy.orm import Session
 
+from app import metrics  # noqa: F401
 from app.database import get_db, init_db
 from app.models import JobStatus, ValidationJob
 from app.schemas import (
@@ -43,6 +45,9 @@ app = FastAPI(
     ),
     lifespan=lifespan,
 )
+
+# Instrument FastAPI endpoints and expose /metrics
+Instrumentator().instrument(app).expose(app)
 
 
 @app.get("/health", tags=["Health"])

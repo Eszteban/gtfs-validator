@@ -1,11 +1,17 @@
 import csv
 import io
 import os
+import time
 import zipfile
 from datetime import UTC, datetime
 from typing import Any
 
 from app.database import SessionLocal
+from app.metrics import (
+    VALIDATION_DURATION_SECONDS,
+    VALIDATION_ERRORS_TOTAL,
+    VALIDATION_JOBS_TOTAL,
+)
 from app.models import JobStatus, ValidationJob
 
 REQUIRED_GTFS_FILES = {
@@ -365,6 +371,7 @@ def validate_gtfs_archive(zip_path: str) -> dict[str, Any]:
 
 def process_validation_job(job_id: str, file_path: str) -> None:
     """Background task worker that performs the validation and updates the database job record."""
+    start_time = time.perf_counter()
     db = SessionLocal()
     try:
         job = db.query(ValidationJob).filter(ValidationJob.id == job_id).first()
@@ -383,16 +390,30 @@ def process_validation_job(job_id: str, file_path: str) -> None:
         job.report_details = report
         db.commit()
 
+        # Record metrics on job completion
+        duration = time.perf_counter() - start_time
+        VALIDATION_JOBS_TOTAL.labels(status=JobStatus.COMPLETED.value).inc()
+        VALIDATION_DURATION_SECONDS.labels(status=JobStatus.COMPLETED.value).observe(duration)
+
+        for err in report.get("errors", []):
+            err_type = err.get("code") or "UNKNOWN_ERROR"
+            VALIDATION_ERRORS_TOTAL.labels(error_type=err_type).inc()
+
     except Exception as exc:
         db.rollback()
+        duration = time.perf_counter() - start_time
+        VALIDATION_JOBS_TOTAL.labels(status=JobStatus.FAILED.value).inc()
+        VALIDATION_DURATION_SECONDS.labels(status=JobStatus.FAILED.value).observe(duration)
+        VALIDATION_ERRORS_TOTAL.labels(error_type="WORKER_EXCEPTION").inc()
+
         job = db.query(ValidationJob).filter(ValidationJob.id == job_id).first()
         if job:
             job.status = JobStatus.FAILED
             job.finished_at = datetime.now(UTC)
-            job.error_summary = f"Worker failed: {str(exc)}"
+            job.error_summary = f"Worker failed: {exc!s}"
             job.report_details = {
                 "is_valid": False,
-                "error_summary": f"Worker failed: {str(exc)}",
+                "error_summary": f"Worker failed: {exc!s}",
                 "files_found": [],
                 "errors": [{
                     "file": None,
